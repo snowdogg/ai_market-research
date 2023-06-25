@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+
+# virtual environment
+myenv/
+
+# Environment variables and secrets
+.env
+
+# Node.js (if you are using it for React)
+node_modules/
+
+# IDE - Visual Studio Code
+.vscode/
+
+# MacOS
+.DS_Store
