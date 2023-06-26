@@ -1,6 +1,7 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException, Depends, Security
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 import os
 import requests
 from dotenv import load_dotenv
@@ -13,6 +14,8 @@ import json
 app = FastAPI()
 load_dotenv()
 
+# Load the API key from environment variable
+API_KEY = os.getenv("MY_API_KEY")
 
 # Configure CORS middleware
 app.add_middleware(
@@ -33,23 +36,43 @@ tools = load_tools(tool_names)
 agent = initialize_agent(tools, llm, agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION, verbose=True)
 
 
-
-
-
-
 class Data(BaseModel):
     text: str
 
+
+security = HTTPBasic()
+
+def verify_api_key(credentials: HTTPBasicCredentials = Depends(security)):
+    # Check if the password part of the Basic Auth header matches the API_KEY
+    if credentials.password != API_KEY:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    return credentials
+
+
 @app.options("/query_chatgpt")
-def handle_options(request: Request):
+def handle_options(request: Request, credentials: HTTPBasicCredentials = Depends(verify_api_key)):
     return {"status": "OK"}
 
-@app.post("/query_chatgpt")
-def query_chatgpt(request: Request, data: Data):
+@app.get("/")
+def read_root():
+    return {"Health": "Check"}
 
+@app.post("/")
+def read_root():
+    return {"Health": "Check"}
+
+@app.post("/query_chatgpt")
+def query_chatgpt(request: Request, data: Data, credentials: HTTPBasicCredentials = Depends(security)):    # Verify API key through Basic Auth
+    verify_api_key(credentials)
     zing = agent.run('''Tell me detailed information about this company, 
     including Company Size, Industry, Business Summary, Website URL, Revenue. 
-    Only Return data that is verified as probably being true. 
+    Only Return data that is verified as probably being true.
+    Industry should be what kind of business it is.
+    do not just append industry to the name of the company, we want to know the industry that the company is in.
+    Make sure all the responses are about the same company. 
+    website should be the url of the company's website.
+    Company Size should be a number of employees. This is very important.
+    Make sure you're giving information about the business and not just random junk from search results. Be smart about it and analyse the data.
     Make sure the Revenue is an annual revenue number in USD.
     Please construct a valid JSON object that has each of these datapoints as a quoted key where the value is the information summarized. 
     The company is called''' + data.text)
@@ -57,34 +80,11 @@ def query_chatgpt(request: Request, data: Data):
         data = json.loads(zing)
     except: 
         print('couldn\'t parse json')
-        data = zing
+        # this bit is ugly but i was running out of serpapi credits and didnt have enough to properly troubleshoot
+        try:
+            data = json.loads(json.loads(json.dumps(zing)))
+        except: 
+            data = zing
+        
 
     return data
-    # text_input = data.text
-    # print('running')
-
-    # # Call OpenAI's API here with the text_input
-    # headers = {
-    #     "Content-Type": "application/json",
-    #     "Authorization": f"Bearer {openai_api_key}"
-    # }
-
-
-    # system_prompt = "You are a a salesman and you need to help write a straight and to the point email that responds to the following email:"
-    # #"You are an expert in market research and you are working for a marketing professional as their assistant. Be direct and to the point."
-    
-    # user_prompt = text_input
-    # payload = {
-        
-    #     "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
-    #     "max_tokens": 100,
-    #     "temperature": 0.2,
-    #     "model": "gpt-3.5-turbo"
-    # }
-
-    # response = requests.post(openai_base_url, headers=headers, json=payload)
-    # response_json = response.json()
-
-    # # chat_response = response_json["choices"][0]["text"]
-    # print(response_json)
-    # return {"response": response_json}
